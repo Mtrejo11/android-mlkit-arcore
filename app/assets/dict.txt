@@ -1,0 +1,8 @@
+mosaic_virus
+yellowl_virus
+healthy
+targer_spot
+bacterial_spot
+late_blight
+septoria_spot
+early_blight

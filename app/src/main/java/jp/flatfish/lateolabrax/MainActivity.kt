@@ -8,7 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
-import android.support.v7.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatActivity;
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -21,8 +21,14 @@ import com.google.ar.sceneform.AnchorNode
 import com.google.ar.sceneform.rendering.ViewRenderable
 import com.google.ar.sceneform.ux.ArFragment
 import com.google.ar.sceneform.ux.TransformableNode
-import com.google.firebase.ml.vision.FirebaseVision
-import com.google.firebase.ml.vision.common.FirebaseVisionImage
+//import com.google.firebase.ml.vision.FirebaseVision
+//import com.google.firebase.ml.vision.common.FirebaseVisionImage
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.common.model.RemoteModelManager
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.automl.AutoMLImageLabelerOptions
+import com.google.mlkit.vision.label.automl.AutoMLImageLabelerRemoteModel
 
 class MainActivity : AppCompatActivity() {
     private val TAG = MainActivity::class.java.simpleName
@@ -62,29 +68,76 @@ class MainActivity : AppCompatActivity() {
         val bitmap = Bitmap.createBitmap(view!!.width, view.height,
                 Bitmap.Config.ARGB_8888)
 
+        //  Defining remote model from autoML
+        val remoteModel =
+                AutoMLImageLabelerRemoteModel.Builder("Plant_village_202075195326").build()
+
+
         // Create a handler thread to offload the processing of the image.
         val handlerThread = HandlerThread("PixelCopier")
         handlerThread.start()
+
+        // Defining download conditions for imported model
+        val downloadConditions = DownloadConditions.Builder()
+                .requireWifi()
+                .build()
+
         // Make the request to copy.
         PixelCopy.request(view, bitmap, { copyResult ->
             if (copyResult == PixelCopy.SUCCESS) {
-                val image = FirebaseVisionImage.fromBitmap(bitmap)
-                FirebaseVision.getInstance()
-                        .visionLabelDetector
-                        .detectInImage(image)
-                        .addOnSuccessListener { labels ->
-                            labels.forEach {
-                                val transformableNode = TransformableNode(arFragment?.getTransformationSystem())
-                                transformableNode.setParent(anchorNode)
-                                transformableNode.renderable = viewRenderable
-                                transformableNode.select()
-                                textView?.text = labels[0].label
-                            }
-                        }
+                val image = InputImage.fromBitmap(bitmap, 0)
+
+                // Instance of our remote model
+                RemoteModelManager.getInstance().download(remoteModel, downloadConditions)
+                        .addOnSuccessListener {
+
+                            // Creating image labeler for recognition
+                            val optionsBuilder = AutoMLImageLabelerOptions.Builder(remoteModel)
+                            val options = optionsBuilder.setConfidenceThreshold(0.5f).build()
+                            val labeler = ImageLabeling.getClient(options)
+
+                            // Execute labeler
+                            labeler.process(image)
+                                    .addOnSuccessListener { labels ->
+                                        // Task completed successfully
+                                        // ...
+                                        labels.forEach {
+                                            label ->
+                                            Log.v("LABEL", label.text)
+                                            val transformableNode = TransformableNode(arFragment?.getTransformationSystem())
+                                            transformableNode.setParent(anchorNode)
+                                            transformableNode.renderable = viewRenderable
+                                            transformableNode.select()
+                                            textView?.text = label.text // Here's where we add label text to our view
+                                        }
+                                    }
+                                    .addOnFailureListener { e ->
+                                        // Task failed with an exception
+                                        // ...
+                                        Log.v("ERROR", e.message)
+
+                                    }                        }
                         .addOnFailureListener { e ->
+
                             e.printStackTrace()
                         }
+//                FirebaseVision.getInstance()
+//                        .visionLabelDetector
+//                        .detectInImage(image)
+//                        .addOnSuccessListener { labels ->
+//                            labels.forEach {
+//                                val transformableNode = TransformableNode(arFragment?.getTransformationSystem())
+//                                transformableNode.setParent(anchorNode)
+//                                transformableNode.renderable = viewRenderable
+//                                transformableNode.select()
+//                                textView?.text = labels[0].label
+//                            }
+//                        }
+//                        .addOnFailureListener { e ->
+//                            e.printStackTrace()
+//                        }
             } else {
+
                 Toast.makeText(this,"Failed to copyPixels: $copyResult", Toast.LENGTH_LONG).show()
             }
             handlerThread.quitSafely()
